@@ -55,7 +55,7 @@
   async function fetchPosts() {
     const res = await fetch("data/posts.json", { cache: "no-cache" });
     if (!res.ok) throw new Error("HTTP " + res.status);
-    const list = await res.json();
+    const list = (await res.json()).filter((p) => p.text || (p.images || []).length); // 跳过空白的
     return list.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   }
 

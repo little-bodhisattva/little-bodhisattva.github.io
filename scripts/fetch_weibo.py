@@ -474,6 +474,9 @@ def run_account(uid, cookie, posts, profiles, initial, backfill_until, max_new):
         if since_id:
             url += f"&since_id={since_id}"
         data = get_json(url, cookie, uid)
+        if page > 1 and data.get("ok") == 0 and not (data.get("data") or {}).get("cards"):
+            reached_end = True  # 翻到最后一页之后，微博会返回“这里还没有内容”，属于正常结束
+            break
         check_ok(data)
         cards = data.get("data", {}).get("cards") or []
         mblogs = [c["mblog"] for c in cards if c.get("card_type") == 9 and c.get("mblog")]
@@ -516,6 +519,9 @@ def run_account(uid, cookie, posts, profiles, initial, backfill_until, max_new):
                 continue
             if post["images"]:  # 只有真正下载成功过图片才清零
                 fails_in_a_row = 0
+            if not post["text"] and not post["images"]:
+                log(f"  （跳过没有文字也没有图片的微博 {mid}，多半是纯视频）")
+                continue
             new_posts.append(post)
             if not is_pinned(mblog):
                 page_new += 1
