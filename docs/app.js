@@ -26,7 +26,7 @@
   // ---------------------------------------------------------------- 设置
 
   const settings = Object.assign(
-    { mode: "slides", scrollSpeed: 3, slideSpeed: 5, theme: "auto", volume: 60, clock: true, night: true, musicSource: "auto" },
+    { mode: "slides", scrollSpeed: 3, slideSpeed: 5, theme: "auto", volume: 60, clock: true, night: true, musicSource: "auto", account: "all" },
     load()
   );
   // 新版默认幻灯片：旧版本保存的“滚动”设置迁移一次
@@ -41,9 +41,16 @@
 
   // ---------------------------------------------------------------- 数据
 
-  let posts = [];
-  let pending = null; // 后台刷新得到的新数据，在下一轮开始时替换
-  let profile = null; // { name, avatar }，由抓取脚本写入 data/profile.json
+  const MAIN_UID = "1769787285"; // 早期保存的微博没有 uid 字段，都属于这个账号
+  let allPosts = [];   // 所有上师的微博
+  let posts = [];      // 按“显示哪位上师”筛选后实际播放的
+  let pending = null;  // 后台刷新得到的新数据，在下一轮开始时替换
+  let profiles = {};   // { uid: { name, avatar } }，由抓取脚本写入 data/profiles.json
+
+  const uidOf = (p) => p.uid || MAIN_UID;
+  const profileOf = (p) => profiles[uidOf(p)] || null;
+  const filtered = (list) => (settings.account && settings.account !== "all"
+    ? list.filter((p) => uidOf(p) === settings.account) : list);
 
   async function fetchPosts() {
     const res = await fetch("data/posts.json", { cache: "no-cache" });
@@ -52,18 +59,59 @@
     return list.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   }
 
-  async function fetchProfile() {
-    const res = await fetch("data/profile.json", { cache: "no-cache" });
-    if (!res.ok) return null;
-    return res.json();
+  async function fetchProfiles() {
+    let res = await fetch("data/profiles.json", { cache: "no-cache" });
+    if (res.ok) return res.json();
+    res = await fetch("data/profile.json", { cache: "no-cache" }); // 旧版只有一个账号
+    return res.ok ? { [MAIN_UID]: await res.json() } : {};
   }
 
+  // 有微博的上师，按微博数量从多到少
+  function activeAccounts() {
+    const count = {};
+    for (const p of allPosts) count[uidOf(p)] = (count[uidOf(p)] || 0) + 1;
+    return Object.keys(count).filter((u) => profiles[u]).sort((a, b) => count[b] - count[a]);
+  }
+
+  // 滚动模式顶部：选了某位上师就显示他；“全部”时并排显示所有头像
   function renderProfile() {
     const mast = $("masthead");
-    if (!profile || !profile.avatar) { mast.hidden = true; return; }
-    $("mastAvatar").src = profile.avatar;
-    $("mastName").textContent = profile.name || "";
+    const shown = settings.account && settings.account !== "all" ? [settings.account] : activeAccounts();
+    const list = shown.map((u) => profiles[u]).filter((x) => x && x.avatar);
+    if (!list.length) { mast.hidden = true; return; }
+    $("mastAvatar").src = list[0].avatar;
+    mast.querySelectorAll(".avatar.extra").forEach((e) => e.remove());
+    let last = $("mastAvatar");
+    for (const pr of list.slice(1)) {
+      const im = document.createElement("img");
+      im.className = "avatar extra";
+      im.src = pr.avatar;
+      im.alt = "";
+      last.after(im);
+      last = im;
+    }
+    mast.classList.toggle("multi", list.length > 1);
+    $("mastName").textContent = list.map((x) => x.name).join(" · ");
     mast.hidden = false;
+  }
+
+  function renderAccountPicker() {
+    const sel = $("accountSel");
+    const accounts = activeAccounts();
+    $("accountRow").hidden = accounts.length < 2;
+    sel.replaceChildren(new Option("全部", "all"), ...accounts.map((u) => new Option(profiles[u].name || u, u)));
+    if (settings.account !== "all" && !accounts.includes(settings.account)) settings.account = "all";
+    sel.value = settings.account || "all";
+  }
+
+  function setAccount(uid) {
+    settings.account = uid;
+    save();
+    posts = filtered(allPosts);
+    renderProfile();
+    renderFeed();
+    slideIndex = 0;
+    if (settings.mode === "slides") showSlide(0); else window.scrollTo(0, 0);
   }
 
   const fmt = new Intl.DateTimeFormat("zh-CN", {
@@ -77,6 +125,7 @@
 
     const meta = document.createElement("div");
     meta.className = "meta";
+    const profile = profileOf(p);
     if (profile && profile.avatar) {
       const av = document.createElement("img");
       av.className = "avatar-sm";
@@ -126,7 +175,8 @@
 
   function applyPending() {
     if (!pending) return false;
-    posts = pending;
+    allPosts = pending;
+    posts = filtered(allPosts);
     pending = null;
     return true;
   }
@@ -275,6 +325,7 @@
 
     const copy = el("div", "copy");
     // 文字区左上角：头像 + 昵称（固定在角上，不随长文滚动）
+    const profile = profileOf(p);
     if (profile && profile.name) {
       const who = el("div", "who");
       if (profile.avatar) { const av = el("img"); av.src = profile.avatar; av.alt = ""; who.appendChild(av); }
@@ -923,6 +974,7 @@
     b.addEventListener("click", () => { settings.theme = b.dataset.themeOpt; save(); applyTheme(); });
   }
   settingsBtn.addEventListener("click", () => setSheet(!sheetOpen));
+  $("accountSel").addEventListener("change", (e) => setAccount(e.target.value));
   $("clockToggle").addEventListener("change", (e) => { settings.clock = e.target.checked; save(); tickClock(); relayout(); });
   $("nightToggle").addEventListener("change", (e) => { settings.night = e.target.checked; save(); tickClock(); });
   musicBtn.addEventListener("click", () => setMusic(!music.on));
@@ -1002,10 +1054,13 @@
     tickClock();
     setInterval(tickClock, 15000);
     volume.value = settings.volume;
-    try { profile = await fetchProfile(); } catch { profile = null; }
-    renderProfile();
+    settings.account = settings.account || "all";
+    try { profiles = await fetchProfiles(); } catch { profiles = {}; }
     try {
-      posts = await fetchPosts();
+      allPosts = await fetchPosts();
+      renderAccountPicker();
+      posts = filtered(allPosts);
+      renderProfile();
     } catch (err) {
       statusEl.textContent = "内容加载失败，请检查网络后刷新。";
       console.error(err);
@@ -1042,15 +1097,17 @@
     lastRefresh = Date.now();
     try {
       const fresh = await fetchPosts();
-      if (fresh.length && (fresh.length !== posts.length || fresh[0].id !== posts[0]?.id)) {
-        if (!posts.length) { posts = fresh; statusEl.hidden = true; renderFeed(); setMode(settings.mode); }
-        else pending = fresh;
-      }
-      const prof = await fetchProfile().catch(() => null);
-      if (prof && (!profile || prof.avatar !== profile.avatar || prof.name !== profile.name)) {
-        profile = prof;
-        renderProfile();
-        pending = pending || posts.slice(); // 下一轮重新渲染卡片上的小头像
+      const prof = await fetchProfiles().catch(() => null);
+      const profChanged = prof && JSON.stringify(prof) !== JSON.stringify(profiles);
+      if (profChanged) profiles = prof;
+      if (fresh.length && (fresh.length !== allPosts.length || fresh[0].id !== allPosts[0]?.id || profChanged)) {
+        if (!posts.length) {
+          allPosts = fresh; posts = filtered(allPosts); statusEl.hidden = true; renderFeed(); setMode(settings.mode);
+        } else {
+          pending = fresh; // 当前一轮播完再换上，不打断
+        }
+        const keep = allPosts;
+        allPosts = fresh; renderAccountPicker(); renderProfile(); allPosts = keep;
       }
       if (!music.on) loadPlaylist();
       cacheImagesInBackground(fresh);
@@ -1058,12 +1115,12 @@
   }
 
   // 有网络时在后台把所有配图存进离线缓存，这样断网后也能看到还没滚动到的图片
-  async function cacheImagesInBackground(list = posts) {
+  async function cacheImagesInBackground(list = allPosts) {
     if (!navigator.onLine || !("serviceWorker" in navigator)) return;
     const reg = await navigator.serviceWorker.ready;
     // 只预存最新的 200 条；更早的图片播放到时再下载并缓存，避免一次占用太多 iPad 空间
     const urls = list.slice(0, BG_CACHE_POSTS).flatMap((p) => p.images || []);
-    if (profile && profile.avatar) urls.push(profile.avatar);
+    for (const pr of Object.values(profiles)) if (pr && pr.avatar) urls.push(pr.avatar);
     if (reg.active && urls.length) reg.active.postMessage({ type: "cache-media", urls });
   }
 

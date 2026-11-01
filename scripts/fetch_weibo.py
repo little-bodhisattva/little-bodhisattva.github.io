@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""抓取指定微博账号的公开微博，保存文字和原图到 docs/ 目录。
+"""抓取 accounts.txt 里各个微博账号的公开微博，保存文字和原图到 docs/ 目录。
 
 只用 Python 标准库，GitHub Actions 里不需要安装依赖。
 
@@ -22,16 +22,19 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
 
-UID = "1769787285"  # 索达吉堪布
+MAIN_UID = "1769787285"  # 索达吉堪布：早期保存的微博没有 uid 字段，都属于这个账号
 ROOT = Path(__file__).resolve().parent.parent
+ACCOUNTS_FILE = ROOT / "accounts.txt"
 DOCS = ROOT / "docs"
 POSTS_FILE = DOCS / "data" / "posts.json"
-PROFILE_FILE = DOCS / "data" / "profile.json"
+PROFILES_FILE = DOCS / "data" / "profiles.json"
+LEGACY_PROFILE_FILE = DOCS / "data" / "profile.json"
 IMAGES_DIR = DOCS / "images"
 
 API = "https://m.weibo.cn/api/container/getIndex"
@@ -85,8 +88,8 @@ def http_get(url, cookie, referer, accept="application/json", retries=3):
     raise FetchError(f"请求失败（{last}）：{url}")
 
 
-def get_json(url, cookie):
-    raw = http_get(url, cookie, referer=f"https://m.weibo.cn/u/{UID}")
+def get_json(url, cookie, uid=MAIN_UID):
+    raw = http_get(url, cookie, referer=f"https://m.weibo.cn/u/{uid}")
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
@@ -237,15 +240,62 @@ def ext_of(url):
     return "." + (m.group(1).lower().replace("jpeg", "jpg") if m else "jpg")
 
 
+# ---------------------------------------------------------------- 账号列表
+
+def read_accounts():
+    """accounts.txt 每行一个账号：数字 ID、微博主页链接，或者账号名字（会自动查出 ID）。"""
+    if not ACCOUNTS_FILE.exists():
+        return [MAIN_UID]
+    out = []
+    for raw in ACCOUNTS_FILE.read_text("utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        first = line.split()[0]
+        m = re.fullmatch(r"\d{5,}", first) or re.search(r"weibo\.(?:com|cn)/(?:u/|profile/)?(\d{5,})", first)
+        if m:
+            out.append(m.group(1) if m.lastindex else m.group(0))
+            continue
+        q = re.search(r"[?&]q=([^&]+)", first)  # 粘贴的是搜索结果链接：取出搜索的名字
+        out.append("name:" + (urllib.parse.unquote(q.group(1)) if q else line))
+    return out
+
+
+def resolve_name(name, cookie):
+    """按账号名字查出数字 ID：先用 m.weibo.cn/n/名字 的跳转，不行再用用户搜索。"""
+    req = urllib.request.Request("https://m.weibo.cn/n/" + urllib.parse.quote(name), headers={
+        "User-Agent": UA, "Cookie": cookie, "Referer": "https://m.weibo.cn/"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            m = re.search(r"/(?:u|profile)/(\d{5,})", resp.geturl())
+            if m:
+                return m.group(1)
+            body = resp.read(200_000).decode("utf-8", "replace")
+            m = re.search(r'"(?:uid|id)"\s*:\s*"?(\d{5,})', body)
+            if m:
+                return m.group(1)
+    except (urllib.error.URLError, TimeoutError, ConnectionError):
+        pass
+    cid = urllib.parse.quote(f"100103type=3&q={name}", safe="")
+    data = get_json(f"{API}?containerid={cid}&page_type=searchall", cookie)
+    check_ok(data)
+    for card in data.get("data", {}).get("cards") or []:
+        for c in [card] + (card.get("card_group") or []):
+            u = c.get("user") or {}
+            if u.get("screen_name") == name and u.get("id"):
+                return str(u["id"])
+    raise FetchError(f"找不到名字为「{name}」的微博账号，请在 accounts.txt 里改用主页链接。")
+
+
 # ---------------------------------------------------------------- 头像与昵称
 
-def find_user(mblogs, cookie):
+def find_user(mblogs, cookie, uid):
     """优先用微博自带的作者信息；拿不到再单独请求一次用户资料。"""
     for m in mblogs:
         u = m.get("user") or {}
-        if str(u.get("id")) == UID and (u.get("avatar_hd") or u.get("profile_image_url")):
+        if str(u.get("id")) == uid and (u.get("avatar_hd") or u.get("profile_image_url")):
             return u
-    data = get_json(f"{API}?type=uid&value={UID}", cookie)
+    data = get_json(f"{API}?type=uid&value={uid}", cookie, uid)
     check_ok(data)
     u = data.get("data", {}).get("userInfo") or {}
     if not (u.get("avatar_hd") or u.get("profile_image_url")):
@@ -253,8 +303,28 @@ def find_user(mblogs, cookie):
     return u
 
 
-def update_profile(user):
-    """下载头像，和上次保存的比较；头像或昵称变了才写文件，避免每天产生无意义的提交。
+def load_profiles():
+    if PROFILES_FILE.exists():
+        return json.loads(PROFILES_FILE.read_text("utf-8"))
+    if LEGACY_PROFILE_FILE.exists():  # 旧版只有一个账号，存在 profile.json
+        return {MAIN_UID: json.loads(LEGACY_PROFILE_FILE.read_text("utf-8"))}
+    return {}
+
+
+def save_profiles(profiles):
+    PROFILES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PROFILES_FILE.write_text(json.dumps(profiles, ensure_ascii=False, indent=1) + "\n", "utf-8")
+    if LEGACY_PROFILE_FILE.exists():
+        LEGACY_PROFILE_FILE.unlink()
+    # 删掉已经没人用的旧头像文件
+    used = {Path(p["avatar"]).name for p in profiles.values() if p.get("avatar")}
+    for f in IMAGES_DIR.glob("avatar_*"):
+        if f.name not in used:
+            f.unlink()
+
+
+def update_profile(user, uid, profiles):
+    """下载头像，和上次保存的比较；头像或昵称变了才改 profiles，返回是否有变化。
 
     头像文件名带内容哈希，换头像后浏览器和离线缓存会拿到新文件，而不是继续显示旧图。
     """
@@ -264,31 +334,26 @@ def update_profile(user):
     if len(data) < 100:
         raise FetchError(f"头像内容异常（{len(data)} 字节）：{url}")
     digest = hashlib.sha1(data).hexdigest()[:10]
-    filename = f"avatar_{digest}{ext_of(url)}"
+    filename = f"avatar_{uid}_{digest}{ext_of(url)}"
 
-    old = json.loads(PROFILE_FILE.read_text("utf-8")) if PROFILE_FILE.exists() else {}
+    old = profiles.get(uid) or {}
     if old.get("avatar") == f"images/{filename}" and old.get("name") == name:
-        log("头像和昵称没有变化。")
-        return
-
+        log(f"{name}：头像和昵称没有变化。")
+        return False
     (IMAGES_DIR / filename).write_bytes(data)
-    for f in IMAGES_DIR.glob("avatar_*"):
-        if f.name != filename:
-            f.unlink()
-    profile = {
+    profiles[uid] = {
         "name": name,
         "avatar": f"images/{filename}",
-        "url": f"https://m.weibo.cn/u/{UID}",
+        "url": f"https://m.weibo.cn/u/{uid}",
         "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
     }
-    PROFILE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    PROFILE_FILE.write_text(json.dumps(profile, ensure_ascii=False, indent=1) + "\n", "utf-8")
     log(f"{'更新' if old else '保存'}了头像和昵称：{name}")
+    return True
 
 
 # ---------------------------------------------------------------- 主流程
 
-def build_post(mblog, cookie):
+def build_post(mblog, cookie, uid):
     """把一条 mblog 转成要保存的结构，并下载图片。图片失败会抛 FetchError。"""
     mid = str(mblog["id"])
     text = html_to_text(full_text(mblog, cookie))
@@ -319,6 +384,7 @@ def build_post(mblog, cookie):
 
     return {
         "id": mid,
+        "uid": uid,
         "created_at": parse_time(mblog["created_at"]),
         "text": text,
         "images": images,
@@ -332,9 +398,12 @@ def is_pinned(mblog):
 
 
 def load_posts():
-    if POSTS_FILE.exists():
-        return json.loads(POSTS_FILE.read_text("utf-8"))
-    return []
+    if not POSTS_FILE.exists():
+        return []
+    posts = json.loads(POSTS_FILE.read_text("utf-8"))
+    for p in posts:
+        p.setdefault("uid", MAIN_UID)  # 旧数据只有一个账号
+    return posts
 
 
 def save_posts(posts):
@@ -346,32 +415,65 @@ def save_posts(posts):
 
 
 def run(cookie, initial, backfill_until=None, max_new=300):
-    """backfill_until：补抓历史模式，从最新一路往回翻，补齐这个日期之后所有还没保存的微博，
-    每次最多新增 max_new 条（分几次跑，会自动接着上次的进度）。"""
+    """依次处理 accounts.txt 里的每个账号。一个账号出错不影响其他账号，最后统一报错。"""
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     posts = load_posts()
+    profiles = load_profiles()
+    profiles_before = json.dumps(profiles, sort_keys=True)
+    errors = []
+    for entry in read_accounts():
+        uid = entry
+        if entry.startswith("name:"):
+            try:
+                uid = resolve_name(entry[5:], cookie)
+                log(f"「{entry[5:]}」的账号 ID 是 {uid}")
+            except FetchError as e:
+                errors.append(str(e))
+                log(f"::error::{e}")
+                continue
+        try:
+            errors += run_account(uid, cookie, posts, profiles, initial, backfill_until, max_new)
+        except FetchError as e:
+            if "WEIBO_COOKIE" in str(e):
+                raise  # cookie 失效时其他账号也抓不了，直接报错
+            errors.append(f"账号 {uid}：{e}")
+            log(f"::error::账号 {uid}：{e}")
+        time.sleep(random.uniform(2, 4))
+    if json.dumps(profiles, sort_keys=True) != profiles_before or not PROFILES_FILE.exists():
+        save_profiles(profiles)
+    if errors:
+        shown = "\n".join(errors[:20]) + (f"\n……另外 {len(errors) - 20} 条省略" if len(errors) > 20 else "")
+        raise FetchError(f"{len(errors)} 处出错（下次运行会自动重试）：\n" + shown)
+
+
+def run_account(uid, cookie, posts, profiles, initial, backfill_until, max_new):
+    """抓一个账号。新内容直接加进 posts 并存盘；返回出错信息列表。
+    backfill_until：补抓历史模式，从最新一路往回翻，补齐这个日期之后所有还没保存的微博，
+    每次最多新增 max_new 条（分几次跑，会自动接着上次的进度）。"""
     known = {p["id"] for p in posts}
-    first_run = not posts
+    mine = sum(1 for p in posts if p["uid"] == uid)
+    first_run = mine == 0
     backfill = backfill_until is not None
     target = max_new if backfill else (initial if first_run else None)
+    log(f"—— 账号 {uid}（{(profiles.get(uid) or {}).get('name', '新账号')}）已有 {mine} 条 ——")
     if backfill:
-        log(f"已有 {len(posts)} 条。补抓 {backfill_until} 之后的历史微博，本次最多新增 {max_new} 条")
+        log(f"补抓 {backfill_until} 之后的历史微博，本次最多新增 {max_new} 条")
     else:
-        log(f"已有 {len(posts)} 条。{'首次运行，目标约 ' + str(initial) + ' 条' if first_run else '增量更新'}")
+        log(f"{'首次抓取，目标约 ' + str(initial) + ' 条' if first_run else '增量更新'}")
     oldest_seen = None
     reached_end = False
 
-    containerid = f"107603{UID}"
+    containerid = f"107603{uid}"
     since_id = None
     new_posts, errors = [], []
     seen_this_run = set()
     fails_in_a_row = 0
 
     for page in range(1, (BACKFILL_MAX_PAGES if backfill else MAX_PAGES) + 1):
-        url = f"{API}?type=uid&value={UID}&containerid={containerid}"
+        url = f"{API}?type=uid&value={uid}&containerid={containerid}"
         if since_id:
             url += f"&since_id={since_id}"
-        data = get_json(url, cookie)
+        data = get_json(url, cookie, uid)
         check_ok(data)
         cards = data.get("data", {}).get("cards") or []
         mblogs = [c["mblog"] for c in cards if c.get("card_type") == 9 and c.get("mblog")]
@@ -379,7 +481,7 @@ def run(cookie, initial, backfill_until=None, max_new=300):
             raise FetchError("第一页没有任何微博，接口结构可能变化或被限制。")
         if page == 1:
             try:
-                update_profile(find_user(mblogs, cookie))
+                update_profile(find_user(mblogs, cookie, uid), uid, profiles)
             except FetchError as e:
                 errors.append(f"头像：{e}")
                 log(f"  ✗ 头像更新失败：{e}")
@@ -399,14 +501,14 @@ def run(cookie, initial, backfill_until=None, max_new=300):
                 continue
             seen_this_run.add(mid)
             try:
-                post = build_post(mblog, cookie)
+                post = build_post(mblog, cookie, uid)
             except (FetchError, KeyError, ValueError) as e:
                 errors.append(f"微博 {mid}：{e}")
                 log(f"  ✗ {mid} 保存失败：{e}")
                 fails_in_a_row += 1
                 if fails_in_a_row >= MAX_IMG_FAILS_IN_A_ROW:
-                    if new_posts:
-                        save_posts(posts + new_posts)
+                    posts.extend(new_posts)
+                    save_posts(posts)
                     raise FetchError(
                         f"连续 {fails_in_a_row} 条微博保存失败，已中止（可能是图床防盗链或网络问题）。"
                         f"最后一个错误：{e}"
@@ -447,16 +549,16 @@ def run(cookie, initial, backfill_until=None, max_new=300):
             break
         time.sleep(random.uniform(1.5, 3) if backfill and page_new == 0 else random.uniform(2, 4))
 
-    log(f"本次新增 {len(new_posts)} 条，共 {len(posts) + len(new_posts)} 条。")
+    posts.extend(new_posts)
+    save_posts(posts)
+    log(f"本次新增 {len(new_posts)} 条，这个账号共 {mine + len(new_posts)} 条。")
     if backfill:
         log(f"这次最远翻到：{oldest_seen[:10] if oldest_seen else '未知'}")
         if reached_end:
             log(f"历史补抓已完成：{backfill_until} 之后能翻到的微博都已保存"
                 + ("" if oldest_seen and oldest_seen[:10] < backfill_until else
                    f"（微博只能往回翻到 {oldest_seen[:10] if oldest_seen else '未知'}）"))
-    if errors:
-        shown = "\n".join(errors[:20]) + (f"\n……另外 {len(errors) - 20} 条省略" if len(errors) > 20 else "")
-        raise FetchError(f"{len(errors)} 条微博保存失败（下次运行会自动重试）：\n" + shown)
+    return errors
 
 
 def main():

@@ -97,6 +97,11 @@ img { display: block; max-width: 100%; height: auto; }
   background: var(--line);
   box-shadow: 0 0 0 1px var(--line);
 }
+/* 多位上师：头像并排、略微重叠，名字在下一行 */
+.masthead.multi { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 0; }
+.masthead.multi .avatar { box-shadow: 0 0 0 3px var(--bg); }
+.masthead .avatar.extra { margin-left: -14px; }
+.masthead.multi .mast-name { flex-basis: 100%; margin-top: 0.6rem; }
 .mast-name {
   margin: 0;
   font-size: 0.8em;
@@ -531,6 +536,22 @@ body:not(.mode-slides) .slides-only { display: none; }
   cursor: pointer;
 }
 .seg button[aria-pressed="true"] { background: var(--seg-on); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); font-weight: 600; }
+
+/* 下拉选择（显示哪位上师） */
+.picker {
+  max-width: 60%;
+  height: 32px;
+  padding: 0 28px 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--seg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center;
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
 
 /* iOS 风格开关 */
 .switch {
