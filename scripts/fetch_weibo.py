@@ -414,8 +414,9 @@ def save_posts(posts):
     tmp.replace(POSTS_FILE)
 
 
-def run(cookie, initial, backfill_until=None, max_new=300):
-    """依次处理 accounts.txt 里的每个账号。一个账号出错不影响其他账号，最后统一报错。"""
+def run(cookie, initial, backfill_until=None, max_new=300, only=None):
+    """依次处理 accounts.txt 里的每个账号。一个账号出错不影响其他账号，最后统一报错。
+    only：只处理这些账号（数字 ID 或名字），用于只给某几个账号补抓历史。"""
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     posts = load_posts()
     profiles = load_profiles()
@@ -431,6 +432,10 @@ def run(cookie, initial, backfill_until=None, max_new=300):
                 errors.append(str(e))
                 log(f"::error::{e}")
                 continue
+        name = (profiles.get(uid) or {}).get("name", "")
+        if only and uid not in only and entry[5:] not in only and name not in only:
+            log(f"跳过账号 {uid}（{name or entry}）：不在这次要处理的名单里")
+            continue
         try:
             errors += run_account(uid, cookie, posts, profiles, initial, backfill_until, max_new)
         except FetchError as e:
@@ -572,6 +577,7 @@ def main():
     ap.add_argument("--initial", type=int, default=100, help="首次运行抓取的条数（默认 100）")
     ap.add_argument("--backfill-until", metavar="YYYY-MM-DD", help="补抓这个日期之后的历史微博")
     ap.add_argument("--max-new", type=int, default=300, help="补抓模式每次最多新增的条数（默认 300）")
+    ap.add_argument("--only", default="", help="只处理这些账号：数字 ID 或名字，用逗号分隔；留空表示全部")
     args = ap.parse_args()
     if args.backfill_until and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", args.backfill_until):
         log("::error::--backfill-until 的格式应为 YYYY-MM-DD，例如 2014-01-01")
@@ -582,7 +588,8 @@ def main():
         log("::error::没有找到 WEIBO_COOKIE。请在仓库 Settings → Secrets and variables → Actions 里添加。")
         return 1
     try:
-        run(cookie, args.initial, args.backfill_until, args.max_new)
+        only = {x.strip() for x in re.split(r"[,，、\s]+", args.only) if x.strip()}
+        run(cookie, args.initial, args.backfill_until, args.max_new, only)
     except FetchError as e:
         for line in str(e).splitlines():
             log(f"::error::{line}")
