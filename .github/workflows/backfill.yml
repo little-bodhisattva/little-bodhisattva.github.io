@@ -11,6 +11,9 @@ on:
       max_new:
         description: "这次最多新增多少条"
         default: "300"
+      only:
+        description: "只补哪些账号（名字或数字 ID，逗号分隔；留空 = 全部）"
+        default: ""
 
 permissions:
   contents: write
@@ -39,7 +42,7 @@ jobs:
         id: fetch
         env:
           WEIBO_COOKIE: ${{ secrets.WEIBO_COOKIE }}
-        run: python3 scripts/fetch_weibo.py --backfill-until "${{ github.event.inputs.until }}" --max-new "${{ github.event.inputs.max_new }}"
+        run: python3 scripts/fetch_weibo.py --backfill-until "${{ github.event.inputs.until }}" --max-new "${{ github.event.inputs.max_new }}" --only "${{ github.event.inputs.only }}"
 
       # 即使抓取中途出错，也把已经成功下载的内容提交，避免白跑
       - name: 提交新内容
