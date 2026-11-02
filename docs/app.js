@@ -26,7 +26,7 @@
   // ---------------------------------------------------------------- 设置
 
   const settings = Object.assign(
-    { mode: "slides", scrollSpeed: 3, slideSpeed: 5, theme: "auto", volume: 60, clock: true, night: true, musicSource: "auto", account: "all" },
+    { mode: "slides", scrollSpeed: 3, slideSpeed: 5, theme: "auto", volume: 60, clock: true, night: true, musicSource: "auto", account: "all", longText: "scroll" },
     load()
   );
   // 新版默认幻灯片：旧版本保存的“滚动”设置迁移一次
@@ -381,7 +381,9 @@
     const textEl = sl.querySelector(".text");
     sl._pages = [];
     sl._page = 0;
+    sl._scroll = false;
     if (!inner || !textEl) { updateFoot(sl); return; }
+    inner.scrollTop = 0;
     const full = sl._text;
     const fits = () => inner.scrollHeight <= inner.clientHeight + 1;
     const vmin = Math.min(innerWidth, innerHeight);
@@ -396,7 +398,17 @@
       if (fits()) { sl._pages = [full]; updateFoot(sl); return; }
     }
 
-    // 分页：每页尽量装满，再退回到最近的句号/换行处断开
+    // 长文“滚动”方式（默认）：保持舒适字号，整段放在一页里，停留期间缓缓向上滚动。
+    // 藏汉对照的微博这样能先看到藏文、再看到下面的汉文，不会被拆到下一页
+    if ((settings.longText || "scroll") === "scroll") {
+      sl.style.setProperty("--fs", readable + "px");
+      sl._pages = [full];
+      sl._scroll = true;
+      updateFoot(sl);
+      return;
+    }
+
+    // 长文“翻页”方式：每页尽量装满，再退回到最近的句号/换行处断开
     sl.style.setProperty("--fs", readable + "px");
     const pages = [];
     let start = 0;
@@ -504,6 +516,13 @@
         tintFrom(photos[k], current);
         photoIdx = k;
       }
+    }
+
+    // 长文滚动：开头停一会儿，中间匀速滚到底，结尾再停一会儿
+    if (current._scroll) {
+      const inner = current.querySelector(".copy-inner");
+      const over = inner.scrollHeight - inner.clientHeight;
+      if (over > 2) inner.scrollTop = Math.min(1, Math.max(0, (p - 0.12) / 0.76)) * over;
     }
 
     // 长文分页：按停留时间平均翻页
@@ -975,6 +994,14 @@
   }
   settingsBtn.addEventListener("click", () => setSheet(!sheetOpen));
   $("accountSel").addEventListener("change", (e) => setAccount(e.target.value));
+  function applyLongText() {
+    for (const b of document.querySelectorAll("[data-long]")) {
+      b.setAttribute("aria-pressed", String(b.dataset.long === (settings.longText || "scroll")));
+    }
+  }
+  for (const b of document.querySelectorAll("[data-long]")) {
+    b.addEventListener("click", () => { settings.longText = b.dataset.long; save(); applyLongText(); relayout(); });
+  }
   $("clockToggle").addEventListener("change", (e) => { settings.clock = e.target.checked; save(); tickClock(); relayout(); });
   $("nightToggle").addEventListener("change", (e) => { settings.night = e.target.checked; save(); tickClock(); });
   musicBtn.addEventListener("click", () => setMusic(!music.on));
@@ -1050,6 +1077,7 @@
     applyTheme();
     $("clockToggle").checked = settings.clock;
     applyMusicSource();
+    applyLongText();
     $("nightToggle").checked = settings.night;
     tickClock();
     setInterval(tickClock, 15000);
