@@ -26,7 +26,7 @@
   // ---------------------------------------------------------------- 设置
 
   const settings = Object.assign(
-    { mode: "slides", scrollSpeed: 3, slideSpeed: 5, theme: "auto", volume: 60, clock: true, night: true, musicSource: "auto", account: "all", longText: "scroll" },
+    { mode: "slides", scrollSpeed: 3, slideSpeed: 5, theme: "auto", volume: 60, clock: true, night: true, musicSource: "auto", accounts: [], longText: "scroll" },
     load()
   );
   // 新版默认幻灯片：旧版本保存的“滚动”设置迁移一次
@@ -49,8 +49,12 @@
 
   const uidOf = (p) => p.uid || MAIN_UID;
   const profileOf = (p) => profiles[uidOf(p)] || null;
-  const filtered = (list) => (settings.account && settings.account !== "all"
-    ? list.filter((p) => uidOf(p) === settings.account) : list);
+  // settings.accounts：选中的上师；空数组表示全部
+  const selectedSet = () => new Set(settings.accounts || []);
+  const filtered = (list) => {
+    const sel = selectedSet();
+    return sel.size ? list.filter((p) => sel.has(uidOf(p))) : list;
+  };
 
   async function fetchPosts() {
     const res = await fetch("data/posts.json", { cache: "no-cache" });
@@ -76,7 +80,8 @@
   // 滚动模式顶部：选了某位上师就显示他；“全部”时并排显示所有头像
   function renderProfile() {
     const mast = $("masthead");
-    const shown = settings.account && settings.account !== "all" ? [settings.account] : activeAccounts();
+    const sel = selectedSet();
+    const shown = activeAccounts().filter((u) => !sel.size || sel.has(u));
     const list = shown.map((u) => profiles[u]).filter((x) => x && x.avatar);
     if (!list.length) { mast.hidden = true; return; }
     $("mastAvatar").src = list[0].avatar;
@@ -96,16 +101,38 @@
   }
 
   function renderAccountPicker() {
-    const sel = $("accountSel");
     const accounts = activeAccounts();
-    $("accountRow").hidden = accounts.length < 2;
-    sel.replaceChildren(new Option("全部", "all"), ...accounts.map((u) => new Option(profiles[u].name || u, u)));
-    if (settings.account !== "all" && !accounts.includes(settings.account)) settings.account = "all";
-    sel.value = settings.account || "all";
+    $("accountGroup").hidden = accounts.length < 2;
+    // 已经不存在的账号从选择里去掉；全部选中等同于“全部”
+    let sel = (settings.accounts || []).filter((x) => accounts.includes(x));
+    if (sel.length === accounts.length) sel = [];
+    settings.accounts = sel;
+    const on = (u) => !sel.length || sel.includes(u);
+    $("accountList").replaceChildren(...accounts.map((u) => {
+      const row = el("label", "row");
+      const name = el("span", "label acct");
+      if (profiles[u].avatar) { const im = el("img"); im.src = profiles[u].avatar; im.alt = ""; name.appendChild(im); }
+      name.appendChild(el("span", "", profiles[u].name || u));
+      const sw = el("input", "switch");
+      sw.type = "checkbox";
+      sw.setAttribute("role", "switch");
+      sw.checked = on(u);
+      sw.addEventListener("change", () => toggleAccount(u, sw));
+      row.append(name, sw);
+      return row;
+    }));
   }
 
-  function setAccount(uid) {
-    settings.account = uid;
+  function toggleAccount(uid, sw) {
+    const accounts = activeAccounts();
+    let sel = (settings.accounts || []).length ? settings.accounts.slice() : accounts.slice();
+    sel = sw.checked ? [...new Set([...sel, uid])] : sel.filter((x) => x !== uid);
+    if (!sel.length) { sw.checked = true; toast("至少保留一位上师"); return; }
+    setAccounts(sel.length === accounts.length ? [] : sel);
+  }
+
+  function setAccounts(list) {
+    settings.accounts = list;
     save();
     posts = filtered(allPosts);
     renderProfile();
@@ -993,7 +1020,7 @@
     b.addEventListener("click", () => { settings.theme = b.dataset.themeOpt; save(); applyTheme(); });
   }
   settingsBtn.addEventListener("click", () => setSheet(!sheetOpen));
-  $("accountSel").addEventListener("change", (e) => setAccount(e.target.value));
+
   function applyLongText() {
     for (const b of document.querySelectorAll("[data-long]")) {
       b.setAttribute("aria-pressed", String(b.dataset.long === (settings.longText || "scroll")));
@@ -1082,7 +1109,9 @@
     tickClock();
     setInterval(tickClock, 15000);
     volume.value = settings.volume;
-    settings.account = settings.account || "all";
+    // 旧版只能选一位：迁移成多选
+    if (settings.account && settings.account !== "all" && !(settings.accounts || []).length) settings.accounts = [settings.account];
+    delete settings.account;
     try { profiles = await fetchProfiles(); } catch { profiles = {}; }
     try {
       allPosts = await fetchPosts();
