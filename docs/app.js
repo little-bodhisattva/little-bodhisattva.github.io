@@ -7,7 +7,7 @@
   const REFRESH_MS = 60 * 60 * 1000;
   const HIDE_MS = 3500;
   const BG_CACHE_POSTS = 200;
-  const BUILD = "2026-11-04c"; // 改网页时顺手更新，方便在设备上确认是否已加载新版本
+  const BUILD = "2026-11-04d"; // 改网页时顺手更新，方便在设备上确认是否已加载新版本
   const svg = (d) => '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">' + d + "</svg>";
   const ICON_PAUSE = svg('<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>');
   const ICON_PLAY = svg('<path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/>');
@@ -1068,12 +1068,15 @@
     syncSpeed();
   });
 
+  // 小把手：不依赖轻点识别，点一下一定出现控制栏
+  $("handle").addEventListener("click", (e) => { e.stopPropagation(); lastTouchTap = Date.now(); showControls(); });
   controls.addEventListener("pointerdown", () => showControls(false));
   controls.addEventListener("pointerup", () => scheduleHide());
   document.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse") showControls(); });
   // 轻点屏幕：显示/隐藏控制栏。
   // iPad 上轻点图片、文字这类“非按钮”区域时浏览器常常不发 click，所以触屏改为自己识别轻点。
   function onTap(target) {
+    if (target && target.closest && target.closest("#handle")) return;
     if (controls.contains(target) || sheet.contains(target)) return;
     if (sheetOpen) { setSheet(false); return; } // 点面板外面先关面板
     if (controls.classList.contains("hide")) showControls();

@@ -56,6 +56,9 @@
     <button id="settingsBtn" class="ctl ctl-small" type="button" aria-label="设置" aria-expanded="false" aria-controls="sheet"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/></svg></button>
   </nav>
 
+  <!-- 一直显示的小把手：控制栏藏起来时，点这里一定能叫出来 -->
+  <button id="handle" class="handle" type="button" aria-label="显示控制栏"><span></span><span></span><span></span></button>
+
   <!-- 设置面板（参考 iOS 控制中心 / 设置的分组样式） -->
   <section id="sheet" class="sheet" role="dialog" aria-label="设置" hidden>
     <div id="accountGroup" class="group" hidden>
@@ -128,6 +131,30 @@
     <p id="buildTag" class="build-tag"></p>
   </section>
 
+  <!-- 出错时直接显示在屏幕上（iPad 上看不到开发者工具，方便把原因拍照发来） -->
+  <script>
+    (function () {
+      var shown = 0;
+      function report(msg) {
+        if (shown++ > 3) return;
+        var box = document.getElementById("errbox");
+        if (!box) {
+          box = document.createElement("pre");
+          box.id = "errbox";
+          box.style.cssText = "position:fixed;left:12px;right:12px;top:12px;z-index:99;margin:0;padding:10px 12px;border-radius:10px;background:rgba(160,30,30,.92);color:#fff;font:12px/1.5 -apple-system,sans-serif;white-space:pre-wrap;max-height:40vh;overflow:auto";
+          box.onclick = function () { box.remove(); };
+          (document.body || document.documentElement).appendChild(box);
+        }
+        box.textContent += (box.textContent ? "\n" : "网页出错（拍照发给维护者，点此关闭）：\n") + msg + "\n" + navigator.userAgent;
+      }
+      window.addEventListener("error", function (e) {
+        report((e.message || "error") + " @" + (e.filename || "").split("/").pop() + ":" + e.lineno + ":" + e.colno);
+      });
+      window.addEventListener("unhandledrejection", function (e) {
+        var r = e.reason; report("Promise: " + (r && (r.stack || r.message) || r));
+      });
+    })();
+  </script>
   <script src="app.js"></script>
 </body>
 </html>
