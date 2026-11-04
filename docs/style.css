@@ -251,8 +251,6 @@ img { display: block; max-width: 100%; height: auto; }
   max-height: 100%;
   overflow-y: auto;
   scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 1.2em, #000 calc(100% - 1.6em), transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 1.2em, #000 calc(100% - 1.6em), transparent 100%);
   padding: 1.2em 0 1.6em;
 }
 .copy-inner::-webkit-scrollbar { display: none; }
@@ -289,13 +287,11 @@ img { display: block; max-width: 100%; height: auto; }
   overflow-wrap: anywhere;
   text-align: start;
   line-break: strict;
-  hanging-punctuation: allow-end;
-  opacity: 0;
-  transform: translateY(10px);
-  transition: opacity 1.4s ease 0.35s, transform 1.4s ease 0.35s;
+  /* 不给正文单独做淡入/位移动画：iPad Safari 在可滚动区域里会把带动画的文字层画丢，
+     出现“有图片有日期、正文空白”。整页本身已经有淡入效果。 */
+  transition: opacity 0.6s ease;
 }
-.sl.in .text { opacity: 1; transform: none; }
-.sl.in .text.turning { opacity: 0; transform: translateY(-6px); transition-duration: 0.6s; transition-delay: 0s; }
+.sl .text.turning { opacity: 0; }
 
 .foot {
   position: absolute;
@@ -537,7 +533,11 @@ body:not(.mode-slides) .slides-only { display: none; }
 }
 .seg button[aria-pressed="true"] { background: var(--seg-on); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); font-weight: 600; }
 
-/* 下拉选择（显示哪位上师） */
+/* 每位上师一个开关 */
+.row .label.acct { flex-direction: row; align-items: center; gap: 10px; }
+.acct img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; flex: none; }
+
+/* 下拉选择 */
 .picker {
   max-width: 60%;
   height: 32px;
