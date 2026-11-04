@@ -444,6 +444,32 @@ img { display: block; max-width: 100%; height: auto; }
   transform: translate(-50%, 16px) scale(0.98);
   pointer-events: none;
 }
+/* 控制栏藏起来时，底部中间留一个淡淡的小把手（点它叫出控制栏） */
+.handle {
+  position: fixed;
+  left: 50%;
+  bottom: max(14px, calc(env(safe-area-inset-bottom) + 4px));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 64px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  transition: opacity 0.6s ease;
+  z-index: 10;
+}
+.handle span { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.controls.hide ~ .handle, .handle.show { opacity: 0.55; pointer-events: auto; }
+
 .ctl {
   display: inline-grid;
   place-items: center;
