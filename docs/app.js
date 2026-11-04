@@ -7,7 +7,7 @@
   const REFRESH_MS = 60 * 60 * 1000;
   const HIDE_MS = 3500;
   const BG_CACHE_POSTS = 200;
-  const BUILD = "2026-11-04b"; // 改网页时顺手更新，方便在设备上确认是否已加载新版本
+  const BUILD = "2026-11-04c"; // 改网页时顺手更新，方便在设备上确认是否已加载新版本
   const svg = (d) => '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">' + d + "</svg>";
   const ICON_PAUSE = svg('<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>');
   const ICON_PLAY = svg('<path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/>');
@@ -381,7 +381,8 @@
     if (!foot) return;
     const pages = sl._pages || [];
     foot.textContent = (sl._index + 1) + " / " + posts.length
-      + (pages.length > 1 ? "　·　" + (sl._page + 1) + " / " + pages.length + " 页" : "");
+      + (pages.length > 1 ? "　·　" + (sl._page + 1) + " / " + pages.length + " 页" : "")
+      + "　·　v" + BUILD.slice(5); // 版本号：不用打开设置也能确认设备是否拿到新版本
   }
 
   // 从图片里取一个主色调，用来给文字区染一层很淡的同色（参考 Apple Music 播放页）
@@ -1070,11 +1071,29 @@
   controls.addEventListener("pointerdown", () => showControls(false));
   controls.addEventListener("pointerup", () => scheduleHide());
   document.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse") showControls(); });
-  document.addEventListener("click", (e) => {
-    if (controls.contains(e.target) || sheet.contains(e.target)) return;
+  // 轻点屏幕：显示/隐藏控制栏。
+  // iPad 上轻点图片、文字这类“非按钮”区域时浏览器常常不发 click，所以触屏改为自己识别轻点。
+  function onTap(target) {
+    if (controls.contains(target) || sheet.contains(target)) return;
     if (sheetOpen) { setSheet(false); return; } // 点面板外面先关面板
     if (controls.classList.contains("hide")) showControls();
     else if (playing) { controls.classList.add("hide"); }
+  }
+  let tapStart = null;
+  let lastTouchTap = 0;
+  document.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "mouse") tapStart = { x: e.clientX, y: e.clientY, t: Date.now() };
+  }, { passive: true });
+  document.addEventListener("pointerup", (e) => {
+    if (e.pointerType === "mouse" || !tapStart) return;
+    const moved = Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y);
+    const quick = Date.now() - tapStart.t < 600;
+    tapStart = null;
+    if (moved < 12 && quick) { lastTouchTap = Date.now(); onTap(e.target); }
+  }, { passive: true });
+  document.addEventListener("click", (e) => {
+    if (Date.now() - lastTouchTap < 800) return; // 触屏已经处理过这次轻点
+    onTap(e.target);
   });
 
   // 幻灯片左右滑动切换
