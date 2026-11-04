@@ -533,6 +533,8 @@ body:not(.mode-slides) .slides-only { display: none; }
 }
 .seg button[aria-pressed="true"] { background: var(--seg-on); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); font-weight: 600; }
 
+.build-tag { margin: 10px 0 0; color: var(--muted); font-size: 11px; text-align: center; }
+
 /* 每位上师一个开关 */
 .row .label.acct { flex-direction: row; align-items: center; gap: 10px; }
 .acct img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; flex: none; }
