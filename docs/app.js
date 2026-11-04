@@ -7,6 +7,7 @@
   const REFRESH_MS = 60 * 60 * 1000;
   const HIDE_MS = 3500;
   const BG_CACHE_POSTS = 200;
+  const BUILD = "2026-11-04b"; // 改网页时顺手更新，方便在设备上确认是否已加载新版本
   const svg = (d) => '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">' + d + "</svg>";
   const ICON_PAUSE = svg('<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>');
   const ICON_PLAY = svg('<path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/>');
@@ -30,7 +31,7 @@
     load()
   );
   // 新版默认幻灯片：旧版本保存的“滚动”设置迁移一次
-  if (settings.v !== 2) { settings.mode = "slides"; settings.v = 2; }
+  if ((settings.v || 0) < 2) { settings.mode = "slides"; settings.v = 2; }
 
   function load() {
     try { return JSON.parse(localStorage.getItem("dw-settings")) || {}; } catch { return {}; }
@@ -1109,9 +1110,9 @@
     tickClock();
     setInterval(tickClock, 15000);
     volume.value = settings.volume;
-    // 旧版只能选一位：迁移成多选
-    if (settings.account && settings.account !== "all" && !(settings.accounts || []).length) settings.accounts = [settings.account];
-    delete settings.account;
+    // 旧版的单选不再沿用：默认显示全部上师
+    if ((settings.v || 0) < 3) { delete settings.account; settings.accounts = []; settings.v = 3; save(); }
+    $("buildTag").textContent = "版本 " + BUILD;
     try { profiles = await fetchProfiles(); } catch { profiles = {}; }
     try {
       allPosts = await fetchPosts();
