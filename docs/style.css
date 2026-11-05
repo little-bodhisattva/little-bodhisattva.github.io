@@ -241,12 +241,17 @@ img { display: block; max-width: 100%; height: auto; }
   position: relative;
   background-color: color-mix(in srgb, var(--tint, var(--bg)) var(--tint-amt), var(--bg));
   transition: background-color 1.8s ease;
+  /* 竖向 flex：正文框靠“可收缩”限制在文字区内（iPad Safari 对百分比 max-height 支持不好，
+     会让长文超出文字区、跑到时钟下面） */
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  justify-content: center;
   min-height: 0;
   padding: max(calc(4.5vh + 76px), calc(env(safe-area-inset-top) + 92px)) max(5.5vw, env(safe-area-inset-right)) max(8vh, calc(env(safe-area-inset-bottom) + 40px)) 5vw;
 }
 .copy-inner {
+  flex: 0 1 auto;
+  min-height: 0;
   width: 100%;
   max-height: 100%;
   overflow-y: auto;
@@ -341,7 +346,7 @@ img { display: block; max-width: 100%; height: auto; }
 /* 没有配图：文字居中成页 */
 .sl.text-only { grid-template-columns: 1fr; }
 .sl.text-only .media { display: none; }
-.sl.text-only .copy { justify-content: center; padding-left: max(8vw, 24px); padding-right: max(8vw, 24px); }
+.sl.text-only .copy { align-items: center; padding-left: max(8vw, 24px); padding-right: max(8vw, 24px); }
 .sl.text-only .copy-inner { max-width: 30em; }
 .sl.text-only .date { justify-content: center; }
 .sl.text-only.short .text { text-align: center; }
@@ -352,7 +357,7 @@ img { display: block; max-width: 100%; height: auto; }
   .sl { grid-template-columns: 1fr; grid-template-rows: 50fr 50fr; }
   .sl.text-only { grid-template-rows: 1fr; }
   .photo { inset: max(5%, env(safe-area-inset-top)) 5% 4%; width: 90%; height: 88%; }
-  .copy { padding: calc(2.5vh + 66px) max(7vw, 20px) max(5vh, calc(env(safe-area-inset-bottom) + 28px)); align-items: flex-start; }
+  .copy { padding: calc(2.5vh + 66px) max(7vw, 20px) max(5vh, calc(env(safe-area-inset-bottom) + 28px)); justify-content: flex-start; }
   .who { top: 2.5vh; left: max(7vw, 20px); }
   .sl.text-only .copy { padding-top: max(calc(4.5vh + 76px), calc(env(safe-area-inset-top) + 92px)); }
   .sl.text-only .who { top: max(4.5vh, calc(env(safe-area-inset-top) + 16px)); }
@@ -361,8 +366,9 @@ img { display: block; max-width: 100%; height: auto; }
 }
 /* 横屏留出右下角给时钟 */
 @media (min-aspect-ratio: 1/1) {
-  body.has-clock .copy { padding-bottom: max(16vh, calc(env(safe-area-inset-bottom) + 130px)); }
+  body.has-clock .copy { padding-bottom: max(18vh, calc(env(safe-area-inset-bottom) + 130px)); }
 }
+
 /* 竖屏：时钟放在图片右上角，白字加阴影 */
 @media (max-aspect-ratio: 1/1) {
   .clock { top: max(3vh, calc(env(safe-area-inset-top) + 12px)); bottom: auto; right: max(5vw, 16px); }
@@ -370,10 +376,6 @@ img { display: block; max-width: 100%; height: auto; }
   body.mode-slides.img-top .clock { color: #fff; text-shadow: 0 1px 14px rgba(0, 0, 0, 0.45); }
   body.mode-slides.img-top .clock-date { color: rgba(255, 255, 255, 0.85); }
   .sl .count { bottom: 12px; }
-}
-@media (max-width: 600px) {
-  .clock-time { font-size: 1.5rem; }
-  .clock-date { margin-top: 4px; font-size: 0.66rem; }
 }
 
 /* 手机竖屏：图片区再小一点，给文字留空间 */
@@ -647,6 +649,16 @@ body:not(.mode-slides) .slides-only { display: none; }
   font-variant-numeric: tabular-nums;
 }
 .clock-date { margin-top: 6px; font-size: 0.78rem; color: var(--muted); letter-spacing: 0.06em; }
+/* 时钟高度不超过给它留的位置（iPad 横屏时原来会压到正文） */
+@media (min-aspect-ratio: 1/1) {
+  .clock { bottom: max(4vh, calc(env(safe-area-inset-bottom) + 14px)); }
+  .clock-time { font-size: min(2.4rem, 7vh); }
+  .clock-date { margin-top: 4px; font-size: min(0.78rem, 2vh); }
+}
+@media (max-width: 600px) {
+  .clock-time { font-size: 1.5rem; }
+  .clock-date { margin-top: 4px; font-size: 0.66rem; }
+}
 
 /* ---------- 夜间自动变暗 ---------- */
 

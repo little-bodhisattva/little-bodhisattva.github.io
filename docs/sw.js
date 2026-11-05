@@ -3,7 +3,7 @@
 // - 图片、音乐文件：缓存优先（文件名不会变内容，下载过一次就一直可用）
 // 媒体单独放一个缓存，网站代码更新时不会把已经存好的图片和音乐清掉。
 
-const SHELL_CACHE = "dw-shell-v6";
+const SHELL_CACHE = "dw-shell-v7";
 const MEDIA_CACHE = "dw-media-v1";
 const SHELL = [
   "./", "index.html", "style.css", "app.js", "manifest.webmanifest",
