@@ -72,9 +72,12 @@ jobs:
           ref: ${{ github.ref }}
       - uses: actions/configure-pages@v5
       - name: 读取 B 站收藏夹（生成背景音乐清单）
-        run: python3 scripts/fetch_music.py
+        run: python3 scripts/fetch_music.py 2>&1 | tee "$RUNNER_TEMP/music.log"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs
       - id: deployment
         uses: actions/deploy-pages@v4
+      - name: B 站音乐清单结果
+        if: always()
+        run: cat "$RUNNER_TEMP/music.log" || true

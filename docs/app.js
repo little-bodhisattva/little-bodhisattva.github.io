@@ -7,7 +7,7 @@
   const REFRESH_MS = 60 * 60 * 1000;
   const HIDE_MS = 3500;
   const BG_CACHE_POSTS = 200;
-  const BUILD = "2026-11-04d"; // 改网页时顺手更新，方便在设备上确认是否已加载新版本
+  const BUILD = "2026-11-05a"; // 改网页时顺手更新，方便在设备上确认是否已加载新版本
   const svg = (d) => '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">' + d + "</svg>";
   const ICON_PAUSE = svg('<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>');
   const ICON_PLAY = svg('<path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/>');
@@ -984,6 +984,11 @@
 
   function setMusic(on) {
     if (on) chooseTracks();
+    // B 站清单还没生成时，先用 YouTube 顶上
+    if (on && !music.tracks.length && music.source === "bili" && ytTracks().length) {
+      music.source = "yt"; music.idx = 0; music.tracks = ytTracks();
+      toast("B 站曲目暂时读取不到，先播放 YouTube");
+    }
     if (on && !music.tracks.length) {
       toast(music.all.length
         ? (music.source === "bili" ? "B 站曲目还没准备好（收藏夹需要公开），请稍后再试" : "这个来源下没有曲子，请在设置里换一个来源")
